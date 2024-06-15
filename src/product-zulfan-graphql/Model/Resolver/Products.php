@@ -145,7 +145,15 @@ class Products implements ResolverInterface
                 'product_special_price' => $specialPrice,
                 'product_status' => $status,
                 'approval_status' => $item->getApprovalStatus(),
-                'type_id' => $this->type->getOptionText($item->getTypeId())
+                'type_id' => $this->type->getOptionText($item->getTypeId()),
+                'price' => $item->getPrice(),
+                'status' => $item->getStatus(),
+                'description' => $item->getDescription(),
+                'short_description' => $item->getShortDescription(),
+                'weight' => $item->getWeight(),
+                'dimension_package_height' => $item->getDimenstionPackageHeight(),
+                'dimension_package_length' => $item->getDimenstionPackageLengt(),
+                'dimension_package_width' => $item->getDimenstionPackageWidth()
             ];
 
             $items[] = $_item;

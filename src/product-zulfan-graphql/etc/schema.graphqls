@@ -11,3 +11,14 @@ type Query {
     ): ProductList
     @resolver(class: "Icube\\ProductZulfanGraphQl\\Model\\Resolver\\Products") @doc(description: "The getProductList query returns the information about a shipment")
 }
+
+type ProductOutput {
+    price: Int @doc(description: "product price")
+    status: String @doc(description: "product status")
+    description: String @doc(description: "product description")
+    short_description: String @doc(description: "entity short description")
+    weight: Int @doc(description: "weight")
+    dimension_package_height: Int @doc(description: "dimension package height")
+    dimension_package_length: Int @doc(description: "dimension package length")
+    dimension_package_width: Int @doc(description: "dimension package width")
+}
