@@ -1,114 +1,166 @@
 <?php
-/**
- * Copyright © Magento, Inc. All rights reserved.
- * See COPYING.txt for license details.
- */
+
 declare(strict_types=1);
 
 namespace Icube\ProductZulfanGraphQl\Model\Resolver;
 
-use Magento\CatalogGraphQl\Model\Resolver\Products\Query\ProductQueryInterface;
 use Magento\Framework\GraphQl\Config\Element\Field;
-use Magento\Framework\GraphQl\Exception\GraphQlAuthorizationException;
-use Magento\Framework\GraphQl\Exception\GraphQlInputException;
 use Magento\Framework\GraphQl\Query\ResolverInterface;
 use Magento\Framework\GraphQl\Schema\Type\ResolveInfo;
-use Magento\Catalog\Model\Layer\Resolver;
-use Magento\CatalogGraphQl\DataProvider\Product\SearchCriteriaBuilder;
+use Magento\Framework\GraphQl\Exception\GraphQlInputException;
+use Magento\Framework\GraphQl\Exception\GraphQlAuthorizationException;
+use Magento\GraphQl\Model\Query\ContextInterface;
+use Magento\Customer\Api\CustomerRepositoryInterface;
+use Magento\Framework\Exception\NoSuchEntityException;
+use Magento\Framework\GraphQl\Exception\GraphQlNoSuchEntityException;
+use Magento\Framework\Pricing\Helper\Data as PricingHelper;
+use Swiftoms\Company\Api\CompanyRepositoryInterface;
+use Swiftoms\General\Helper\GraphQlSearchCriteria;
+use Swiftoms\Product\Model\ProductRepository;
+use Magento\Catalog\Model\Product\Type;
 
-/**
- * Products field resolver, used for GraphQL request processing.
- */
 class Products implements ResolverInterface
 {
     /**
-     * @var ProductQueryInterface
+     * @var ProductRepository
      */
-    private $searchQuery;
+    protected $productRepository;
 
     /**
-     * @var SearchCriteriaBuilder
+     * @var PricingHelper
      */
-    private $searchApiCriteriaBuilder;
+    protected $priceHelper;
 
     /**
-     * @param ProductQueryInterface $searchQuery
-     * @param SearchCriteriaBuilder|null $searchApiCriteriaBuilder
+     * @var CustomerRepositoryInterface
+     */
+    protected $customerRepository;
+
+    /**
+     * @var CompanyRepositoryInterface
+     */
+    protected $companyRepository;
+
+    /**
+     * @var GraphQlSearchCriteria
+     */
+    protected $searchCriteriaHelper;
+
+    /**
+     * @var Type
+     */
+    protected $type;
+
+    /**
+     * @param ProductRepository $productRepository
+     * @param PricingHelper $priceHelper
+     * @param CustomerRepositoryInterface $customerRepository
+     * @param CompanyRepositoryInterface $companyRepository
+     * @param GraphQlSearchCriteria $searchCriteriaHelper
+     * @param Type $type
      */
     public function __construct(
-        ProductQueryInterface $searchQuery,
-        SearchCriteriaBuilder $searchApiCriteriaBuilder = null
+        ProductRepository $productRepository,
+        PricingHelper $priceHelper,
+        CustomerRepositoryInterface $customerRepository,
+        CompanyRepositoryInterface $companyRepository,
+        GraphQlSearchCriteria $searchCriteriaHelper,
+        Type $type
     ) {
-        $this->searchQuery = $searchQuery;
-        $this->searchApiCriteriaBuilder = $searchApiCriteriaBuilder ??
-            \Magento\Framework\App\ObjectManager::getInstance()->get(SearchCriteriaBuilder::class);
+        $this->productRepository = $productRepository;
+        $this->priceHelper = $priceHelper;
+        $this->customerRepository = $customerRepository;
+        $this->companyRepository = $companyRepository;
+        $this->searchCriteriaHelper = $searchCriteriaHelper;
+        $this->type = $type;
     }
 
     /**
-     * @inheritdoc
+     * @inheritDoc
      */
     public function resolve(
         Field $field,
         $context,
         ResolveInfo $info,
-        array $value = null,
-        array $args = null
+        ?array $value = null,
+        ?array $args = null
     ) {
-        $this->validateInput($args);
-
-        $searchResult = $this->searchQuery->getResult($args, $info, $context);
-
-        if ($searchResult->getCurrentPage() > $searchResult->getTotalPages() && $searchResult->getTotalCount() > 0) {
-            throw new GraphQlInputException(
-                __(
-                    'currentPage value %1 specified is greater than the %2 page(s) available.',
-                    [$searchResult->getCurrentPage(), $searchResult->getTotalPages()]
-                )
+        /** @var ContextInterface $context */
+        if (false === $context->getExtensionAttributes()->getIsCustomer()) {
+            throw new GraphQlAuthorizationException(
+                __('The request is allowed for logged in')
             );
+        }
+
+        if ($args['currentPage'] < 1) {
+            throw new GraphQlInputException(__('currentPage value must be greater than 0.'));
+        }
+
+        if ($args['pageSize'] < 1) {
+            throw new GraphQlInputException(__('pageSize value must be greater than 0.'));
+        }
+
+        try {
+            $customer = $this->customerRepository->getById($context->getUserId());
+        } catch (NoSuchEntityException $e) {
+            throw new GraphQlNoSuchEntityException(__($e->getMessage()));
+        }
+
+        /* Check if user is a vendor or not. Auto filter product by vendor_id if user is a vendor */
+        $customerCompanyId = (!empty($customer->getCustomAttribute('customer_company_code'))) ? $customer->getCustomAttribute('customer_company_code')->getValue() : '';
+        if (!empty($customerCompanyId)) {
+            try {
+                $company = $this->companyRepository->get($customerCompanyId);
+                $args['filter']['vendor_id'] = ['eq' => $company->getCompanyCode()];
+            } catch (NoSuchEntityException $e) {
+                throw new GraphQlNoSuchEntityException(__("you assigned with company id %1, but the company doesn't exist", $customerCompanyId));
+            }
+        }
+
+        $searchCriteria = $this->searchCriteriaHelper->build($args);
+        $searchResult = $this->productRepository->getList($searchCriteria);
+
+        $items = [];
+        foreach ($searchResult->getItems() as $key => $item) {
+            $status = [];
+            switch ($item->getStatus()) {
+                case 1:
+                    $status['value'] = $item->getStatus();
+                    $status['label'] = 'Enabled';
+                    break;
+
+                default:
+                    $status['value'] = $item->getStatus();
+                    $status['label'] = 'Disabled';
+                    break;
+            }
+
+            $specialPrice = is_null($item->getSpecialPrice()) ? null : $this->priceHelper->currency($item->getSpecialPrice(), true, false);
+
+            $_item = [
+                'entity_id' => $item->getId(),
+                'name' => $item->getName(),
+                'sku' => $item->getSku(),
+                'product_price' => $this->priceHelper->currency($item->getPrice(), true, false),
+                'product_special_price' => $specialPrice,
+                'product_status' => $status,
+                'approval_status' => $item->getApprovalStatus(),
+                'type_id' => $this->type->getOptionText($item->getTypeId())
+            ];
+
+            $items[] = $_item;
         }
 
         $data = [
             'total_count' => $searchResult->getTotalCount(),
-            'items' => $searchResult->getProductsSearchResult(),
+            'items' => $items,
             'page_info' => [
-                'page_size' => $searchResult->getPageSize(),
-                'current_page' => $searchResult->getCurrentPage(),
-                'total_pages' => $searchResult->getTotalPages()
-            ],
-            'search_result' => $searchResult,
-            'layer_type' => isset($args['search']) ? Resolver::CATALOG_LAYER_SEARCH : Resolver::CATALOG_LAYER_CATEGORY,
+                'page_size' => $searchCriteria->getPageSize(),
+                'current_page' => $searchCriteria->getCurrentPage(),
+                'total_pages' => ceil($searchResult->getTotalCount() / $searchCriteria->getPageSize())
+            ]
         ];
 
-        if (isset($args['filter']['category_id'])) {
-            $data['categories'] = $args['filter']['category_id']['eq'] ?? $args['filter']['category_id']['in'];
-            $data['categories'] = is_array($data['categories']) ? $data['categories'] : [$data['categories']];
-        }
-
         return $data;
-    }
-
-    /**
-     * Validate input arguments
-     *
-     * @param array $args
-     * @throws GraphQlAuthorizationException
-     * @throws GraphQlInputException
-     */
-    private function validateInput(array $args)
-    {
-        if (isset($args['searchAllowed']) && $args['searchAllowed'] === false) {
-            throw new GraphQlAuthorizationException(__('Product search has been disabled.'));
-        }
-        if ($args['currentPage'] < 1) {
-            throw new GraphQlInputException(__('currentPage value must be greater than 0.'));
-        }
-        if ($args['pageSize'] < 1) {
-            throw new GraphQlInputException(__('pageSize value must be greater than 0.'));
-        }
-        if (!isset($args['search']) && !isset($args['filter'])) {
-            throw new GraphQlInputException(
-                __("'search' or 'filter' input argument is required.")
-            );
-        }
     }
 }
