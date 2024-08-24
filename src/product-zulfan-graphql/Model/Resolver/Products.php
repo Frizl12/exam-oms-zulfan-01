@@ -151,9 +151,9 @@ class Products implements ResolverInterface
                 'description' => $item->getDescription(),
                 'short_description' => $item->getShortDescription(),
                 'weight' => $item->getWeight(),
-                'dimension_package_height' => $item->getDimenstionPackageHeight(),
-                'dimension_package_length' => $item->getDimenstionPackageLengt(),
-                'dimension_package_width' => $item->getDimenstionPackageWidth()
+                'dimension_package_height' => $item->getDimensionPackageHeight(),
+                'dimension_package_length' => $item->getDimensionPackageLength(),
+                'dimension_package_width' => $item->getDimensionPackageWidth()
             ];
 
             $items[] = $_item;
