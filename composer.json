@@ -1,0 +1,36 @@
+{
+    "name": "Frizl12/exam-oms-zulfan-01",
+    "type": "magento2-module",
+    "authors": [
+        {
+            "name": "zulfan",
+            "email": "fachrizal.zulfan@sirclo.com"
+        }
+    ],
+    "description": "datascrip modules",
+    "homepage": "https://github.com/Frizl12/exam-oms-zulfan-01",
+    "keywords": [
+        "magento",
+        "magento2"
+    ],
+    "minimum-stability": "dev",
+    "license": [
+        "OSL-3.0",
+        "AFL-3.0"
+    ],
+    "version": "4.1.13",
+    "repositories": {
+        "0": {
+            "type": "composer",
+            "url": "https://repo.magento.com/"
+        }
+    },
+    "autoload": {
+        "files": [
+            "src/product-zulfan-graphql/registration.php"
+        ],
+        "psr-4": {
+            "Icube\\ProductZulfanGraphQl\\": "src/product-zulfan-graphql"
+        }
+    }
+}
